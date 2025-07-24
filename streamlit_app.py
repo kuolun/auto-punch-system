@@ -2,7 +2,7 @@
 import streamlit as st  # Web 應用框架
 import requests  # HTTP 請求
 from bs4 import BeautifulSoup  # HTML 解析
-from datetime import datetime  # 日期時間處理
+from datetime import datetime, timezone, timedelta  # 日期時間處理（加入時區支援）
 import time  # 時間控制
 import json  # JSON 處理
 
@@ -43,6 +43,21 @@ st.markdown("""
 
 # API 基礎網址
 BASE_URL = "https://herbworklog.netlify.app/.netlify/functions"
+
+# 設定台灣時區
+TAIWAN_TZ = timezone(timedelta(hours=8))  # UTC+8
+
+def get_taiwan_time():
+    """取得台灣當前時間"""
+    return datetime.now(TAIWAN_TZ)
+
+def get_taiwan_date_string():
+    """取得台灣當前日期字串 (YYYY-MM-DD)"""
+    return get_taiwan_time().strftime("%Y-%m-%d")
+
+def get_taiwan_datetime_string():
+    """取得台灣當前日期時間字串 (YYYY-MM-DD HH:MM:SS)"""
+    return get_taiwan_time().strftime("%Y-%m-%d %H:%M:%S")
 
 # 工具函數
 @st.cache_data(ttl=300)  # 快取 5 分鐘，避免重複請求
@@ -97,7 +112,7 @@ def fetch_case_edit(case_key, case_list, user_id):
     except Exception as e:
         return None
 
-def extract_fields(doc, today, user_id):
+def extract_fields(doc, today, user_id, punch_message):
     """從案件編輯頁面提取欄位資料"""
     field_ids = [
         "f_key", "f_case_name", "f_person_id", "f_person2_id",
@@ -122,7 +137,7 @@ def extract_fields(doc, today, user_id):
 
     # 更新工作日誌
     original_log = payload.get("f_log", "")
-    payload["f_log"] = f"{original_log}".strip()
+    payload["f_log"] = f"{today}\n{punch_message}\n\n{original_log}".strip()
 
     # 設定更新資訊
     payload["f_update_date"] = today
@@ -304,7 +319,13 @@ with col1:
         st.warning("⚠️ 請先使用「🔄 自動抓取」取得您的案件清單")
         case_list = ""  # 設定為空，讓後續驗證失敗
 
-
+    # 🔥 自訂打卡訊息
+    punch_message = st.text_input(
+        "💬 打卡訊息",
+        value="自動打卡成功",
+        help="這個訊息會加入到您的工作日誌中",
+        key="punch_message_input"
+    )
 
     with st.expander("📖 填寫範例"):
         st.markdown("""
@@ -406,7 +427,7 @@ with col2:
 
         # 解析案件清單
         case_keys = [k.strip() for k in case_list.split(",") if k.strip()]
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = get_taiwan_date_string()  # 使用台灣時間
 
         st.info(f"📋 將處理 {len(case_keys)} 筆案件")
 
@@ -440,7 +461,7 @@ with col2:
                     continue
 
                 # 提取欄位資料
-                payload = extract_fields(doc, today, user_id)
+                payload = extract_fields(doc, today, user_id, punch_message)
                 case_name = payload.get('f_case_name', '未知')
                 f_key = payload.get('f_key', '未知')
 
@@ -516,7 +537,7 @@ with col2:
 
         # 儲存到執行歷史
         if auto_save_log:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = get_taiwan_datetime_string()  # 使用台灣時間
             st.session_state.punch_log.append({
                 "timestamp": timestamp,
                 "results": results,
@@ -612,14 +633,15 @@ if st.session_state.punch_log:
         if st.button("📊 匯出記錄"):
             import json
             export_data = {
-                "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "export_time": get_taiwan_datetime_string(),  # 使用台灣時間
                 "total_executions": len(st.session_state.punch_log),
                 "history": st.session_state.punch_log
             }
+            taiwan_time_str = get_taiwan_time().strftime('%Y%m%d_%H%M%S')
             st.download_button(
                 "💾 下載 JSON 檔案",
                 data=json.dumps(export_data, ensure_ascii=False, indent=2),
-                file_name=f"punch_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                file_name=f"punch_log_{taiwan_time_str}.json",
                 mime="application/json"
             )
 
@@ -677,7 +699,8 @@ with st.sidebar:
 
     st.subheader("📈 系統狀態")
     st.success("🟢 系統正常運作")
-    st.info(f"🕐 當前時間：{datetime.now().strftime('%H:%M:%S')}")
+    current_time = get_taiwan_time().strftime('%H:%M:%S')
+    st.info(f"🕐 台灣時間：{current_time}")
 
     if st.session_state.punch_log:
         last_success = st.session_state.punch_log[-1]['success_count']
