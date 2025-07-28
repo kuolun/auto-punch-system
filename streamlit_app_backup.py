@@ -173,6 +173,8 @@ col1, col2 = st.columns([2, 1])
 with col1:
     # 🔥 重點：使用者資訊輸入區 🔥
     st.subheader("👤 使用者資訊")
+
+    # ⭐ 這裡就是同事們要填寫的個人資訊 ⭐
     st.markdown("**請填寫您的個人登入資訊：**")
 
     # 使用 columns 讓輸入框橫向排列
@@ -187,6 +189,8 @@ with col1:
             key="user_id_input"
         )
 
+ 
+
     with input_col2:
         # 🔥 密碼輸入框（隱藏顯示）
         password = st.text_input(
@@ -197,12 +201,13 @@ with col1:
             key="password_input"
         )
 
+    # 自動抓取按鈕（移到密碼下方）
     st.markdown("---")
-    st.markdown("🎯 **抓取案件清單**：請先抓取您的案件清單")
+    st.markdown("🎯 **自動抓取案件清單**：系統會從您的帳號自動取得專屬案件清單")
     
     if st.button(
-        "🔄 抓取案件清單",
-        help="從系統取得您的案件清單",
+        "🔄 自動抓取案件清單",
+        help="從系統自動取得您的案件清單",
         type="secondary"
     ):
         # 檢查是否已填入帳密
@@ -221,6 +226,25 @@ with col1:
                     auto_cases = [k.strip() for k in auto_case_list.split(",") if k.strip()]
 
                     st.success(f"✅ 成功抓取！從表格中找到 {len(auto_cases)} 個案件")
+                    st.info(f"📋 您的案件清單：{auto_case_list}")
+
+                    # 顯示案件詳情
+                    with st.expander("👀 查看抓取到的案件詳情"):
+                        st.markdown("**從系統表格中抓取到的案件：**")
+                        for i, case in enumerate(auto_cases, 1):
+                            st.write(f"{i}. 案件編號：**{case}**")
+
+                        st.markdown("---")
+                        st.markdown("**抓取邏輯：**")
+                        st.code("""
+1. 登入系統 (/case_list)
+2. 解析 HTML 回應
+3. 找到 id="caselist1" 的表格
+4. 遍歷每個 <tr> 行
+5. 取得第2個 <td> 的內容（案件編號）
+6. 用逗號串接：00020,00021,00036,00019
+                        """)
+
                 else:
                     st.error("❌ 無法取得案件清單")
 
@@ -237,7 +261,17 @@ with col1:
                         st.write("- 先嘗試手動登入系統確認帳密")
                         st.write("- 如果問題持續，請聯繫系統管理員")
 
-    st.divider()
+                        # 測試連線功能
+                        if st.button("🧪 測試基本連線", key="debug_test"):
+                            with st.spinner("測試連線..."):
+                                try:
+                                    test_resp = requests.get(BASE_URL.replace('/functions', ''), timeout=10)
+                                    if test_resp.status_code == 200:
+                                        st.success("✅ 基本網路連線正常")
+                                    else:
+                                        st.error(f"❌ 連線異常，狀態碼：{test_resp.status_code}")
+                                except Exception as e:
+                                    st.error(f"❌ 連線失敗：{str(e)}")
 
     # 顯示已抓取的案件清單（只讀）
     if st.session_state.get('auto_case_list'):
@@ -266,6 +300,14 @@ with col1:
     else:
         case_list = ""  # 設定為空，讓後續驗證失敗
 
+    # 🔥 自訂打卡訊息
+    punch_message = st.text_input(
+        "💬 打卡訊息",
+        value="",
+        help="這個訊息會加入到您的工作日誌中",
+        key="punch_message_input"
+    )
+
 
     # 選項設定
     st.subheader("⚙️ 執行設定")
@@ -287,17 +329,50 @@ with col2:
     if not user_id or not password:
         st.warning("⚠️ 請填寫員工編號和密碼")
     elif not case_list:
-        st.warning("⚠️ 請使用「🔄 抓取案件清單」取得案件清單")
+        st.warning("⚠️ 請使用「🔄 自動抓取」取得案件清單")
     else:
         st.success("✅ 所有資訊已準備就緒，可以開始操作")
 
-    # 🔥 自訂打卡訊息（移到開始打卡按鈕上方）
-    punch_message = st.text_input(
-        "💬 打卡訊息",
-        value="",
-        help="這個訊息會加入到您的工作日誌中",
-        key="punch_message_input_right"
-    )
+    # 測試連線按鈕
+    if st.button(
+        "🔍 測試連線",
+        disabled=not input_valid,
+        use_container_width=True,
+        type="secondary"
+    ):
+        with st.spinner("正在測試連線..."):
+            # 解析案件清單
+            case_keys = [k.strip() for k in case_list.split(",") if k.strip()]
+
+            if not case_keys:
+                st.error("❌ 案件清單格式錯誤")
+            else:
+                # 測試第一個案件
+                first_case = case_keys[0]
+                doc = fetch_case_edit(first_case, case_list, user_id)
+
+                if doc:
+                    # 提取案件資訊
+                    case_name_el = doc.find(id="f_case_name")
+                    case_name = case_name_el.get("value", "未知") if case_name_el else "未知"
+
+                    f_key_el = doc.find(id="f_key")
+                    f_key = f_key_el.get("value", "未知") if f_key_el else "未知"
+
+                    st.success("✅ 連線測試成功！")
+
+                    # 顯示測試結果
+                    st.markdown(f"""
+                    <div class="success-box">
+                        <strong>📋 案件名稱：</strong>{case_name}<br>
+                        <strong>🔑 案件編號：</strong>{f_key}<br>
+                        <strong>📊 總案件數：</strong>{len(case_keys)} 筆
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.error("❌ 連線失敗，請檢查帳號密碼和案件編號")
+
+    st.divider()
 
     # 開始打卡按鈕
     if st.button(
@@ -437,13 +512,107 @@ with col2:
 
         st.success("🏁 **執行完成！** 您可以關閉此頁面或繼續使用其他功能")
 
+    st.divider()
 
+# 執行結果顯示
+if st.session_state.punch_log:
+    st.subheader("📈 執行歷史")
+
+    # 顯示歷史記錄摘要
+    st.write(f"**總共執行次數：** {len(st.session_state.punch_log)} 次")
+
+    # 最近執行記錄
+    latest_log = st.session_state.punch_log[-1]
+
+    # 成功率計算
+    success_rate = (latest_log['success_count'] / latest_log['total_count'] * 100) if latest_log['total_count'] > 0 else 0
+
+    # 狀態顏色
+    if success_rate == 100:
+        status_color = "success"
+        status_icon = "🎉"
+    elif success_rate > 0:
+        status_color = "warning"
+        status_icon = "⚠️"
+    else:
+        status_color = "error"
+        status_icon = "❌"
+
+    # 顯示最近執行摘要
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "最近執行時間",
+            latest_log['timestamp'].split(' ')[1],  # 只顯示時間
+            latest_log['timestamp'].split(' ')[0]   # 日期作為 delta
+        )
+
+    with col2:
+        st.metric(
+            "成功案件數",
+            f"{latest_log['success_count']}/{latest_log['total_count']}",
+            f"{success_rate:.0f}% 成功率"
+        )
+
+    with col3:
+        st.metric(
+            "處理案件數",
+            f"{latest_log['total_count']} 筆",
+            "全部案件"
+        )
+
+    # 詳細歷史記錄
+    with st.expander("📋 查看詳細執行歷史"):
+        for i, log in enumerate(reversed(st.session_state.punch_log), 1):
+            st.markdown(f"### 第 {len(st.session_state.punch_log) - i + 1} 次執行")
+            st.markdown(f"**時間：** {log['timestamp']}")
+            st.markdown(f"**結果：** {log['success_count']}/{log['total_count']} 筆成功")
+
+            # 顯示各案件結果
+            if 'results' in log:
+                for result in log['results']:
+                    if result['status'].startswith('✅'):
+                        st.success(f"{result['case']}: {result['message']}")
+                    else:
+                        st.error(f"{result['case']}: {result['message']} - {result.get('details', '')}")
+
+            st.divider()
+
+    # 操作按鈕
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🗑️ 清除歷史記錄"):
+            st.session_state.punch_log = []
+            st.success("✅ 歷史記錄已清除")
+            st.rerun()
+
+    with col2:
+        if st.button("📊 匯出記錄"):
+            import json
+            export_data = {
+                "export_time": get_taiwan_datetime_string(),  # 使用台灣時間
+                "total_executions": len(st.session_state.punch_log),
+                "history": st.session_state.punch_log
+            }
+            taiwan_time_str = get_taiwan_time().strftime('%Y%m%d_%H%M%S')
+            st.download_button(
+                "💾 下載 JSON 檔案",
+                data=json.dumps(export_data, ensure_ascii=False, indent=2),
+                file_name=f"punch_log_{taiwan_time_str}.json",
+                mime="application/json"
+            )
+
+else:
+    # 如果沒有執行記錄，顯示說明
+    st.info("📝 尚無執行記錄。完成第一次打卡後，執行歷史會顯示在這裡。")
 
 # 頁腳資訊
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; font-size: 0.9em;">
-    🤖 自動打卡系統 v3.0 - 簡潔版
+    🤖 自動打卡系統 v3.0 
 </div>
 """, unsafe_allow_html=True)
 
