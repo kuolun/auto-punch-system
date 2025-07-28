@@ -137,7 +137,7 @@ def extract_fields(doc, today, user_id, punch_message):
 
     # 更新工作日誌
     original_log = payload.get("f_log", "")
-    payload["f_log"] = f"{today}\n{punch_message}\n\n{original_log}".strip()
+    payload["f_log"] = f"{punch_message}\n\n{original_log}".strip()
 
     # 設定更新資訊
     payload["f_update_date"] = today
